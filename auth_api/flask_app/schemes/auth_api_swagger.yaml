@@ -1,0 +1,518 @@
+#swagger: "2.0"
+info:
+  description: "Тестовый сервис авторизации"
+  version: "1.0"
+  title: "Auth_API"
+basePath: "/v1"
+tags:
+- name: "user"
+  description: "Операции с пользователями"
+- name: "group"
+  description: "Операции с группами"
+schemes:
+- "https"
+- "http"
+
+
+paths:
+  /users/:
+    get:
+      tags:
+      - User
+      summary: "Список всех зарегистрированных пользователей"
+      description: ""
+      operationId: "list_users"
+      parameters:
+      - name: "page_size"
+        type: "integer"
+        in: "query"
+        description: "Размер страницы для постраничной выдачи"
+      - name: "page_number"
+        type: "integer"
+        in: "query"
+        description: "Номер страницы для постраничной выдачи, начиная с 1"
+      produces:
+      - "application/json"
+      responses:
+        "200":
+          description: "Список пользователей или страница из этого списка"
+          schema:
+            $ref: "#/definitions/UserBriefList"
+
+  /users/{user_id}/:
+    get:
+      tags:
+      - User
+      summary: "Получить данные по пользователю"
+      description: ""
+      operationId: "get_user"
+      produces:
+      - "application/json"
+      parameters:
+      - name: "user_id"
+        in: "path"
+        type: "string"
+        format: "uuid"
+        required: true
+        description: "Идентификатор пользователя"
+      responses:
+        "200":
+          description: "Данные пользователя"
+          schema:
+            $ref: "#/definitions/UserBrief"
+        "404":
+          description: "Пользователь не найден"
+
+  /users/history:
+    get:
+      tags:
+      - User
+      summary: "Получить историю действий текущего пользователя"
+      description: ""
+      operationId: "get_user_history"
+      produces:
+      - "application/json"
+      security:
+      - APIKey: []
+      parameters:
+      - name: "page_size"
+        type: "integer"
+        in: "query"
+        description: "Размер страницы для постраничной выдачи"
+      - name: "page_number"
+        type: "integer"
+        in: "query"
+        description: "Номер страницы для постраничной выдачи, начиная с 1"
+      responses:
+        "200":
+          description: "История действий пользователя"
+          schema:
+            $ref: "#/definitions/UserHistory"
+        401:
+          description: "UNAUTHORIZED"
+        403:
+          description: "FORBIDDEN"
+
+  /users/groups/:
+    get:
+      tags:
+      - Group
+      summary: "Список всех групп в которых состоит текущий пользователь"
+      description: ""
+      operationId: "get_user_groups"
+      produces:
+      - "application/json"
+      security:
+      - APIKey: []
+      responses:
+        "200":
+          description: "Список групп текущего пользователя"
+          schema:
+            $ref: "#/definitions/GroupList"
+        401:
+          description: "UNAUTHORIZED"
+        403:
+          description: "FORBIDDEN"
+
+  /users/register:
+    post:
+      description: "Регистрация в системе нового пользователя"
+      operationId: "register"
+      tags:
+      - User
+      produces:
+      - "application/json"
+      parameters:
+      - name: "user"
+        in: body
+        schema:
+          $ref: '#/definitions/User'
+      responses:
+        200:
+          description: OK
+          schema:
+            $ref: '#/definitions/User'
+        409:
+          description: "Имя или емейл уже задействованы"
+
+  /users/login:
+    post:
+      description: "Вход пользователя в систему"
+      tags:
+      - User
+      produces:
+      - "application/json"
+      parameters:
+        - name: "login"
+          in: query
+          description: "имя пользователя для входа"
+          required: true
+          type: "string"
+        - name: "password"
+          in: query
+          description: "Пароль"
+          required: true
+          type: string
+      responses:
+        "200":
+          description: "successful operation"
+          schema:
+            $ref: '#/definitions/AccessToken'
+        "400":
+          description: "Invalid username/password supplied"
+
+  /users/logout:
+
+  /groups/:
+    get:
+      tags:
+      - Group
+      summary: "Список всех групп пользователей"
+      description: ""
+      operationId: "list_groups"
+      produces:
+      - "application/json"
+      responses:
+        "200":
+          description: "Список групп пользователей"
+          schema:
+            $ref: "#/definitions/GroupList"
+
+    post:
+      tags:
+      - Group
+      summary: "Создать новую группу"
+      description: ""
+      operationId: "create_group"
+      produces:
+      - "application/json"
+      security:
+      - APIKey: []
+      parameters:
+      - name: Group
+        in: body
+        description: "Создаваемая группа"
+        schema:
+          $ref: '#/definitions/Group'
+      responses:
+        "200":
+          description: ОК
+          schema:
+            $ref: "#/definitions/Group"
+        401:
+          description: "UNAUTHORIZED"
+        403:
+          description: "FORBIDDEN"
+
+  /groups/{group_id}:
+    get:
+      tags:
+      - Group
+      summary: "Получить данные по группе"
+      description: ""
+      operationId: "get_group"
+      produces:
+      - "application/json"
+      parameters:
+      - name: "group_id"
+        in: "path"
+        type: "string"
+        format: "uuid"
+        required: true
+        description: "Идентификатор группы"
+      responses:
+        "200":
+          description: "Данные группы"
+          schema:
+            $ref: "#/definitions/Group"
+        "404":
+          description: "Группа не найдена"
+
+    delete:
+      tags:
+      - Group
+      summary: "Удалить группу"
+      description: ""
+      operationId: "delete_group"
+      produces:
+      - "application/json"
+      security:
+      - APIKey: []
+      parameters:
+      - name: "group_id"
+        in: "path"
+        type: "string"
+        format: "uuid"
+        required: true
+        description: "Идентификатор группы"
+      responses:
+        "200":
+          description: "Группа удалена"
+        "401":
+          description: "Вы не авторизованы"
+        "403":
+          description: "Вы не администратор"
+
+    put:
+      tags:
+      - Group
+      summary: "Обновить данные группы"
+      description: ""
+      operationId: "update_group"
+      produces:
+      - "application/json"
+      security:
+      - APIKey: []
+      parameters:
+      - name: "group_id"
+        in: "path"
+        type: "string"
+        format: "uuid"
+        required: true
+        description: "Идентификатор группы"
+      - name: "Group"
+        in: "body"
+        description: "Данные группы"
+        schema:
+          $ref: '#/definitions/Group'
+      responses:
+        "200":
+          description: "Данные группы обновлены"
+          schema:
+            $ref: "#/definitions/Group"
+        "401":
+          description: "UNAUTHORIZED"
+        "403":
+          description: "FORBIDDEN"
+
+  /groups/{group_id}/users/:
+    get:
+      tags:
+      - Group
+      summary: "Получить список пользователей группы"
+      description: ""
+      operationId: "get_group_users"
+      produces:
+      - "application/json"
+      parameters:
+      - name: "group_id"
+        in: "path"
+        type: "string"
+        format: "uuid"
+        required: true
+        description: "Идентификатор группы"
+      - name: "page_number"
+        in: "query"
+        type: "integer"
+        required: true
+      - name: "page_size"
+        in: "query"
+        type: "integer"
+        required: true
+      responses:
+        "200":
+          description: "Массив пользователей группы"
+          schema:
+            $ref: "#/definitions/UserList"
+
+    post:
+      tags:
+      - Group
+      summary: "Добавить пользователя в группу"
+      description: ""
+      operationId: "add_group_user"
+      produces:
+      - "application/json"
+      security:
+      - APIKey: []
+      parameters:
+      - name: "group_id"
+        in: "path"
+        type: "string"
+        format: "uuid"
+        required: true
+        description: "Идентификатор группы"
+      - name: "userId"
+        in: "body"
+        description: "Идентификатор пользователя"
+        schema:
+          $ref: '#/definitions/UserId'
+      responses:
+        "200":
+          description: "Пользователь добавлен в группу"
+        "401":
+          description: "Вы не авторизованы"
+        "403":
+          description: "Вы не администратор"
+        "404":
+          description: "Пользователь или группа не найдены"
+
+  /groups/{group_id}/user/{user_id}/:
+    get:
+      tags:
+      - Group
+      summary: "Проверить принадлежность пользователя группе"
+      description: ""
+      operationId: "get_group_user"
+      produces:
+      - "application/json"
+      parameters:
+      - name: "group_id"
+        in: "path"
+        type: "string"
+        format: "uuid"
+        required: true
+        description: "Идентификатор группы"
+      - name: "user_id"
+        in: "path"
+        type: "string"
+        format: "uuid"
+        required: true
+        description: "Идентификатор пользователя"
+      responses:
+        "200":
+          description: "Пользователь входит в группу"
+        "404":
+          description: "Пользователь не входит в группу"
+
+    delete:
+      tags:
+      - Group
+      summary: "Удалить пользователя из группы"
+      description: ""
+      operationId: "delete_group_user"
+      produces:
+      - "application/json"
+      security:
+      - APIKey: []
+      parameters:
+      - name: "group_id"
+        in: "path"
+        type: "string"
+        format: "uuid"
+        required: true
+        description: "Идентификатор группы"
+      - name: "user_id"
+        in: "path"
+        type: "string"
+        format: "uuid"
+        required: true
+        description: "Идентификатор пользователя"
+      responses:
+        "200":
+          description: "Пользователь удален из группы"
+        "404":
+          description: "Пользователь или группа не найдены"
+
+definitions:
+  UserId:
+    type: "object"
+    properties:
+      id:
+        type: "string"
+        format: "uuid"
+
+  UserBrief:
+    type: "object"
+    properties:
+      email:
+        type: "string"
+        format: email
+      id:
+        type: "string"
+        format: "uuid"
+      login:
+        type: "string"
+
+  UserBriefList:
+    type: "array"
+    items:
+      $ref: "#/definitions/UserBrief"
+
+  Group:
+    type: "object"
+    properties:
+      id:
+        type: "string"
+        format: "uuid"
+      name:
+        type: "string"
+      description:
+        type: "string"
+
+  GroupList:
+    type: "array"
+    items:
+      $ref: "#/definitions/Group"
+
+  User:
+    type: "object"
+    properties:
+      id:
+        type: "string"
+        format: "uuid"
+      login:
+        type: "string"
+      email:
+        type: "string"
+        format: email
+      password:
+        type: "string"
+        format: "password"
+      full_name:
+        type: "string"
+      phone:
+        type: "string"
+      avatar_link:
+        type: "string"
+        format: "url"
+      address:
+        type: "string"
+        format: "string"
+      created_at:
+        type: "string"
+        format: "date-time"
+      updated_at:
+        type: "string"
+        format: "date-time"
+    xml:
+      name: "User"
+
+  UserList:
+    type: "array"
+    items:
+      $ref: "#/definitions/User"
+
+  UserHistoryItem:
+    type: "object"
+    properties:
+      id:
+        type: "string"
+        format: "uuid"
+      user_id:
+        type: "string"
+        format: "uuid"
+      useragent:
+        type: "string"
+      timestamp:
+        type: "string"
+        format: "date-time"
+
+  UserHistory:
+    type: "array"
+    items:
+      $ref: "#/definitions/UserHistoryItem"
+
+  AccessToken:
+    type: "object"
+    properties:
+      access_token:
+        type: "string"
+      refresh_token:
+        type: "string"
+
+securityDefinitions:
+  APIKey:
+    type: apiKey
+    name: Authorization
+    in: header
