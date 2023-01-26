@@ -4,13 +4,18 @@ from auth_config import db
 from db_models import Group, User
 from decorators import admin_required
 from flasgger.utils import swag_from
-from flask import Blueprint, render_template, request
+from flask import Blueprint, request
 from flask.json import jsonify
 
 groups_bp = Blueprint("groups_bp", __name__)
 
 
-@swag_from("../schemes/groups_get.yaml")
+@swag_from(
+    "../schemes/auth_api_swagger.yaml",
+    endpoint="list_groups",
+    methods=["GET"],
+    validation=True,
+)
 @groups_bp.route("/", methods=["GET"])
 def list_groups():
     """
@@ -22,9 +27,14 @@ def list_groups():
     return jsonify(groups)
 
 
+@swag_from(
+    "../schemes/auth_api_swagger.yaml",
+    endpoint="create_group",
+    methods=["POST"],
+    validation=True,
+)
 @groups_bp.route("/", methods=["POST"])
 @admin_required()
-@swag_from("../schemes/group_post.yaml")
 def create_group():
     """
     Создать новую группу
@@ -38,7 +48,12 @@ def create_group():
     return jsonify(group.to_json())
 
 
-@swag_from("../schemes/group_get.yaml")
+@swag_from(
+    "../schemes/auth_api_swagger.yaml",
+    endpoint="get_group",
+    methods=["GET"],
+    validation=True,
+)
 @groups_bp.route("/<group_id>/", methods=["GET"])
 def get_group(group_id):
     """
@@ -50,9 +65,14 @@ def get_group(group_id):
     return jsonify(group.to_json())
 
 
+@swag_from(
+    "../schemes/auth_api_swagger.yaml",
+    endpoint="delete_group",
+    methods=["DELETE"],
+    validation=True,
+)
 @groups_bp.route("/<group_id>/", methods=["DELETE"])
 @admin_required()
-@swag_from("../schemes/group_del.yaml")
 def del_group(group_id):
     """
     Удалить группу
@@ -65,7 +85,12 @@ def del_group(group_id):
     return jsonify({"result": "Group deleted"})
 
 
-@swag_from("../schemes/group_put.yaml")
+@swag_from(
+    "../schemes/auth_api_swagger.yaml",
+    endpoint="update_group",
+    methods=["PUT"],
+    validation=True,
+)
 @admin_required()
 @groups_bp.route("/<group_id>/", methods=["PUT"])
 def update_group(group_id):
@@ -84,7 +109,12 @@ def update_group(group_id):
     return jsonify({})
 
 
-@swag_from("../schemes/group_users_get.yaml", methods=["GET"])
+@swag_from(
+    "../schemes/auth_api_swagger.yaml",
+    endpoint="get_group_users",
+    methods=["GET"],
+    validation=True,
+)
 @groups_bp.route("/<group_id>/users/", methods=["GET"])
 def list_group_users(group_id):
     """
@@ -106,7 +136,12 @@ def list_group_users(group_id):
     return jsonify(answer)
 
 
-@groups_bp.route("/<group_id>/users/", methods=["POST"])
+@swag_from(
+    "../schemes/auth_api_swagger.yaml",
+    endpoint="add_group_user",
+    methods=["POST"],
+    validation=True,
+)
 @admin_required()
 @swag_from("../schemes/group_user_post.yaml", methods=["POST"])
 def add_group_user(group_id):
@@ -119,7 +154,7 @@ def add_group_user(group_id):
 
     # user_id = request.args["user_id"]
     user_id = request.json["user_id"]
-    user = User.query.get(user_id)
+    user = User.query.filter_by(id=user_id, deleted=False).first()
     if user is None:
         return jsonify({"error": "user not found"}), HTTPStatus.NOT_FOUND
     group.users.append(user)
@@ -128,7 +163,12 @@ def add_group_user(group_id):
     return jsonify({"result": f"User {user_id} added to group {group_id}"})
 
 
-@swag_from("../schemes/group_user_check_get.yaml", methods=["GET"])
+@swag_from(
+    "../schemes/auth_api_swagger.yaml",
+    endpoint="get_group_user",
+    methods=["GET"],
+    validation=True,
+)
 @groups_bp.route("/<group_id>/user/<user_id>", methods=["GET"])
 def get_membership(group_id, user_id):
     """
@@ -143,7 +183,7 @@ def get_membership(group_id, user_id):
     group = Group.query.get(group_id)
     if group is None:
         return jsonify({"error": "group not found"}), HTTPStatus.NOT_FOUND
-    user = User.query.get(user_id)
+    user = User.query.filter_by(id=user_id, deleted=False).first()
     if user is None:
         return jsonify({"error": "user not found"}), HTTPStatus.NOT_FOUND
     if user not in group.users:
@@ -151,14 +191,19 @@ def get_membership(group_id, user_id):
     return jsonify({"user_id": user_id, "group_id": group_id})
 
 
-@admin_required()
-@swag_from("../schemes/group_user_del.yaml", methods=["DELETE"])
+@swag_from(
+    "../schemes/auth_api_swagger.yaml",
+    endpoint="delete_group_user",
+    methods=["DELETE"],
+    validation=True,
+)
 @groups_bp.route("/<group_id>/user/<user_id>", methods=["DELETE"])
+@admin_required()
 def del_membership(group_id, user_id):
     """
     Удалить пользователя из группы
     """
-    user = User.query.get(user_id)
+    user = User.query.filter_by(id=user_id, deleted=False).first()
     if user is None:
         return jsonify({"error": "user not found"}), HTTPStatus.NOT_FOUND
     group = Group.query.get(group_id)

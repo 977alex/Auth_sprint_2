@@ -26,7 +26,9 @@ def admin_required():
                     jsonify({"msg": f"Bad access token: {ex}"}),
                     HTTPStatus.UNAUTHORIZED,
                 )
-            current_user = User.query.get(get_jwt_identity())
+            current_user = User.query.filter_by(
+                id=get_jwt_identity(), deleted=False
+            ).first()
             if not current_user or not current_user.is_admin():
                 return (
                     jsonify({"error": "Only administrators may do it"}),
@@ -37,3 +39,4 @@ def admin_required():
         return decorated
 
     return wrapper
+

@@ -4,22 +4,20 @@
 
 import logging
 import os
-import shutil
 import sys
 import time
 
-from flasgger import Swagger
-from flask import Flask
-from flask_migrate import init, migrate, upgrade
-
 from auth_config import Config, db, engine, insp, jwt, migrate_obj
 from db_models import Group, User
+from flasgger import Swagger
+from flask import Flask, make_response, request
+from flask_migrate import init, migrate, upgrade
+from flask_opentracing import FlaskTracer
 from groups_bp.groups_bp import groups_bp
 from test_bp.test_bp import test_bp
 from users_bp.users_bp import users_bp
 
 BASE_PATH = "/v01"
-# при добавлении новых версий буду копировать папки груп юзер и тест
 
 
 def db_initialize(app):
@@ -43,11 +41,32 @@ def db_initialize(app):
             db.close_all_sessions()
             db.drop_all()
             if os.path.isdir(Config.MIGRATIONS_PATH):
-                shutil.rmtree(Config.MIGRATIONS_PATH)
+                # shutil.rmtree(Config.MIGRATIONS_PATH)
                 engine.execute("DELETE FROM alembic_version")
+                engine.execute(
+                    "INSERT INTO alembic_version(version_num) VALUES ('initial_script')"
+                )
             init(Config.MIGRATIONS_PATH)
-            migrate(Config.MIGRATIONS_PATH)
+            migrate(Config.MIGRATIONS_PATH, message="Initial migration")
             upgrade(Config.MIGRATIONS_PATH)
+            engine.execute(
+                """ALTER TABLE auth.user ATTACH PARTITION auth.user_active
+                FOR VALUES IN (False);"""
+            )
+            engine.execute(
+                """ALTER TABLE auth.user ATTACH PARTITION auth.user_deleted
+                FOR VALUES IN (True);"""
+            )
+            engine.execute(
+                """ALTER TABLE auth.history ATTACH PARTITION auth.history_2022
+                FOR VALUES FROM ('2022-01-01') TO ('2023-01-01');"""
+            )
+            engine.execute(
+                """ALTER TABLE auth.history ATTACH PARTITION auth.history_2023
+                FOR VALUES FROM ('2023-01-01') TO ('2024-01-01');"""
+            )
+
+            db.session.commit()
             # db.create_all()
             admin_group = Group(name="admin", description="Administrators")
             admin_user = User(
@@ -55,12 +74,21 @@ def db_initialize(app):
                 email="root@localhost",
                 password_hash="",
                 full_name="Site administrator",
+                deleted=False,
             )
             regular_user = User(
                 login="nobody",
                 email="nobody@localhost",
                 password_hash="",
                 full_name="Regular user",
+                deleted=False,
+            )
+            deleted_user = User(
+                login="deleted",
+                email="deeted@localhost",
+                password_hash="",
+                full_name="Regular user",
+                deleted=True,
             )
             # Берем пароли из переменных окружения
             admin_user.password = os.getenv("ADMIN_PASSWORD")
@@ -68,6 +96,7 @@ def db_initialize(app):
             db.session.add(admin_group)
             db.session.add(admin_user)
             db.session.add(regular_user)
+            db.session.add(deleted_user)
             db.session.commit()
             # Только после первого коммита пользователь и группа получат
             # автосгенерированные UUID
@@ -78,12 +107,47 @@ def db_initialize(app):
             logging.error(f"we have a problem: {ex}")
 
 
+config_data = {
+    "sampler": {
+        "type": "const",
+        "param": 1,
+    },
+    "local_agent": {
+        "reporting_host": "jaeger",
+        "reporting_port": "6831",
+    },
+    "logging": True,
+}
+
+
+def _setup_jaeger():
+    from jaeger_client import Config
+
+    config = Config(
+        config=config_data,
+        service_name="movies-api",
+        validate=True,
+    )
+    return config.initialize_tracer()
+
+
+app = Flask(__name__)
+tracer = FlaskTracer(_setup_jaeger, app=app)
+
+
+@app.before_request
+def before_request():
+    request_id = request.headers.get("X-Request-Id")
+    if not request_id:
+        return make_response("X-Request-Id not found", 404)
+
+
 def create_app():
-    app = Flask(__name__)
     app.config.from_object(Config())
     app.register_blueprint(groups_bp, url_prefix=f"{BASE_PATH}/groups")
     app.register_blueprint(users_bp, url_prefix=f"{BASE_PATH}/users")
-    app.register_blueprint(test_bp, url_prefix=f"{BASE_PATH}/test")
+    app.register_blueprint(test_bp, url_prefix="/test")
+
     swagger = Swagger(app, template=Config.SWAGGER_TEMPLATE)
     db.init_app(app)
     # engine = db.create_engine(Config.SQLALCHEMY_DATABASE_URI, {})
@@ -103,6 +167,6 @@ if __name__ == "__main__":
             db.drop_all()
         # Инициалиазции базы. Проверяем наличие таблицы пользователей
         if not insp.has_table("user", schema="auth"):
-            logging.info(f"initializing...")
+            logging.info("initializing...")
             db_initialize(app)
         app.run(host="0.0.0.0")

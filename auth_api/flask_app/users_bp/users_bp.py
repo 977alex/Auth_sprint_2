@@ -1,10 +1,19 @@
+import logging
+import os
+import random
+import string
 from datetime import datetime
+from functools import wraps
 from http import HTTPStatus
 
+import opentracing
 from auth_config import Config, db, jwt, jwt_redis
-from db_models import History, User
+from authlib.integrations.flask_client import OAuth
+from db_models import History, SocialAccount, User
 from flasgger.utils import swag_from
-from flask import Blueprint, render_template, request
+from flask import Blueprint
+from flask import current_app as app
+from flask import make_response, request, url_for
 from flask.json import jsonify
 from flask_jwt_extended import (
     create_access_token,
@@ -14,15 +23,58 @@ from flask_jwt_extended import (
     jwt_required,
     verify_jwt_in_request,
 )
-from password_hash import check_password, hash_password
+from sqlalchemy import or_
+
+import redis
+
+oauth = OAuth(app)
 
 jwt_redis_blocklist = jwt_redis
 users_bp = Blueprint("users_bp", __name__)
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-@swag_from("../schemes/users_get.yaml", methods=["GET"])
+
+def limit_requests(per_minute: int):
+    redis_host = os.getenv("REDIS_AUTH_HOST", "redis_auth")
+    redis_port = int(os.getenv("REDIS_AUTH_PORT", 6479))
+    redis_password = os.getenv("REDIS_AUTH_PASSWORD", "superpassword")
+    redis_conn = redis.Redis(
+        host=redis_host, port=redis_port, db=0, password=redis_password
+    )
+
+    def wrapper(func):
+        @wraps(func)
+        def wrapped(*args, **kwargs):
+            pipe = redis_conn.pipeline()
+            now = datetime.now()
+            key = f"{now.hour}:{now.minute}"
+            pipe.incr(key, 1)
+            pipe.expire(key, 59)
+            result = pipe.execute()
+            logger.info(f"key - {key}. result - {result}")
+            if result[0] > per_minute:
+                return (
+                    jsonify({"error": "too many requests"}),
+                    HTTPStatus.TOO_MANY_REQUESTS,
+                )
+            return func(*args, **kwargs)
+
+        return wrapped
+
+    return wrapper
+
+
+@swag_from(
+    "../schemes/auth_api_swagger.yaml",
+    endpoint="list_users",
+    methods=["GET"],
+    validation=True,
+)
 @users_bp.route("/", methods=["GET"])
-def list_users():
+@limit_requests(per_minute=10)
+def list_users(**kwargs):
     """
     Список всех зарегистрированных пользователей
     """
@@ -42,11 +94,24 @@ def list_users():
     return jsonify(users), HTTPStatus.OK
 
 
-@swag_from("../schemes/user_register.yaml", validation=True)
+@swag_from(
+    "../schemes/auth_api_swagger.yaml",
+    endpoint="register",
+    methods=["POST"],
+    validation=True,
+)
 @users_bp.route("/register", methods=["POST"])
+@limit_requests(per_minute=10)
 def register():
     """
     Метод регистрации пользователя
+
+    Это операция может быть довольно трудоемкой (проверка существования
+    такого логина и адреса электронной почты, в перспективе - телефона,
+    отправка SMS или электронного письма). Плюс к этому - пользователей
+    мы не удаляем и каждая регистрация увеличит размеры нашей базы
+    необратимо. Поэтому ограничим количество регистраций десятью в
+    минуту.
     """
     obj = request.json
     user = User.query.filter_by(email=obj["email"]).first()
@@ -158,7 +223,7 @@ def update():
     if user is None:
         return jsonify({"error": "user not found"}), HTTPStatus.NOT_FOUND
     obj = request.json
-    obj["password"] = hash_password(obj["password"])
+    # obj["password"] = hash_password(obj["password"])
     updated_user = user.from_json(obj)
     return (
         jsonify(msg=f"Update success: {updated_user}"),
@@ -166,7 +231,12 @@ def update():
     )
 
 
-@swag_from("../schemes/user_get.yaml", methods=["GET"])
+@swag_from(
+    "../schemes/auth_api_swagger.yaml",
+    endpoint="get_user",
+    methods=["GET"],
+    validation=True,
+)
 @users_bp.route("/<user_id>/", methods=["GET"])
 def get_user(user_id):
     """
@@ -178,15 +248,20 @@ def get_user(user_id):
     return jsonify(user.to_json())
 
 
+@swag_from(
+    "../schemes/auth_api_swagger.yaml",
+    endpoint="get_user_history",
+    methods=["GET"],
+    validation=True,
+)
 @users_bp.route("/history", methods=["GET"])
 @jwt_required()
-@swag_from("../schemes/user_history_get.yaml", methods=["GET"])
 def get_user_history(**kwargs):
     """
     Получить историю операций пользователя
     """
 
-    current_user = User.query.get(get_jwt_identity())
+    current_user = User.query.filter_by(id=get_jwt_identity(), deleted=False).first()
     page_size = request.args.get("page_size", None)
     page_number = request.args.get("page_number", 1)
     if not current_user:
@@ -202,8 +277,99 @@ def get_user_history(**kwargs):
     return jsonify([h.to_json() for h in history])
 
 
+@swag_from(
+    "../schemes/auth_api_swagger.yaml",
+    endpoint="get_user_groups",
+    methods=["GET"],
+    validation=True,
+)
+@users_bp.route("/groups", methods=["GET"])
+@jwt_required()
+def get_user_groups(**kwargs):
+    """
+    Получить список групп, в которых состоит текущий пользователь
+    """
+    current_user = User.query.get(get_jwt_identity())
+    if not current_user:
+        return jsonify({"error": "No such user"}), HTTPStatus.NOT_FOUND
+    groups = []
+    for group in current_user.get_all_groups().all():
+        groups.append(group.to_json())
+    return jsonify(groups)
+
+
 @jwt.token_in_blocklist_loader
 def check_if_token_is_revoked(jwt_header, jwt_payload):
     jti = jwt_payload["jti"]
     token_in_redis = jwt_redis_blocklist.get(jti)
     return token_in_redis is not None
+
+
+@users_bp.route("/oauth/login/<string:social_name>", methods=["GET"])
+def create_authorisation_url(social_name: str):
+    oauth.register(
+        social_name,
+    )
+    client = oauth.create_client(social_name)
+    if not client:
+        return make_response({"msg": f"{client} not found"}, HTTPStatus.NOT_FOUND)
+    redirect_url = url_for(
+        "users_bp.social_user_authorise",
+        social_name=social_name,
+        _external=True,
+    )
+    return client.authorize_redirect(redirect_url)
+
+
+@users_bp.route("/oauth/callback/<string:social_name>", methods=["GET"])
+def social_user_authorise(social_name: str):
+    from app import tracer
+
+    parent_span = tracer.get_span()
+    client = oauth.create_client(social_name)
+    if not client:
+        return make_response({"msg": f"{client} not found"}, HTTPStatus.NOT_FOUND)
+    token = client.authorize_access_token()
+    user_info_url = oauth._clients[social_name].api_base_url
+    user_info = oauth._clients[social_name].get(user_info_url).json()
+    if not user_info:
+        return make_response({"msg": "Information not provided"}, HTTPStatus.NOT_FOUND)
+    password = "".join(random.choice(string.printable) for i in range(10))
+    with opentracing.tracer.start_span(
+        "Get User record db save", child_of=parent_span
+    ) as span:
+        user = User.query.filter(
+            or_(
+                User.login == user_info["login"],
+                User.email == user_info["default_email"],
+            )
+        ).first()
+    if not user:
+        with opentracing.tracer.start_span(
+            "User record db save", child_of=parent_span
+        ) as span:
+            user = User(
+                email=user_info["default_email"],
+                login=user_info["login"],
+                password_hash=password,
+            )
+            db.session.add(user)
+            db.session.commit()
+            social_user = SocialAccount(
+                social_id=user_info["id"], social_name=social_name, user_id=user.id
+            )
+            db.session.add(social_user)
+            db.session.commit()
+    access_token = create_access_token(identity=user.id)
+    refresh_token = create_refresh_token(identity=user.id)
+    useragent = request.user_agent.string
+    with opentracing.tracer.start_span(
+        "history record db save", child_of=parent_span
+    ) as span:
+        history = History(
+            user_id=user.id, useragent=useragent, timestamp=datetime.now()
+        )
+        db.session.add(history)
+        db.session.commit()
+    token = {"access_token": access_token, "refresh_token": refresh_token}
+    return make_response(token, 200)

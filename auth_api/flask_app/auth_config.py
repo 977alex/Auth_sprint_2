@@ -1,11 +1,15 @@
+import hashlib
 import os
 from datetime import timedelta
 
+from dotenv import load_dotenv
 from flask_jwt_extended import JWTManager
 from flask_migrate import Migrate
 from flask_sqlalchemy import SQLAlchemy, inspect
 
 import redis
+
+load_dotenv("auth.env")
 
 
 class Config:
@@ -16,6 +20,7 @@ class Config:
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=1)
     JWT_REFRESH_TOKEN_EXPIRES = timedelta(days=30)
     ACCESS_EXPIRES = timedelta(hours=1)
+    SECRET_KEY = hashlib.md5(b"super_secret").hexdigest()
     SWAGGER_TEMPLATE = {
         "securityDefinitions": {
             "APIKeyHeader": {
@@ -27,6 +32,11 @@ class Config:
         }
     }
     MIGRATIONS_PATH = os.getenv("MIGRATIONS_PATH")
+    YANDEX_CLIENT_ID = os.getenv("YANDEX_CLIENT_ID")
+    YANDEX_CLIENT_SECRET = os.getenv("YANDEX_CLIENT_SECRET")
+    YANDEX_AUTHORIZE_URL = os.getenv("YANDEX_AUTHORIZE_URL")
+    YANDEX_ACCESS_TOKEN_URL = os.getenv("YANDEX_ACCESS_TOKEN_URL")
+    YANDEX_API_BASE_URL = os.getenv("YANDEX_API_BASE_URL")
 
 
 db = SQLAlchemy(session_options={"autoflush": False})
