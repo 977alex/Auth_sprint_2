@@ -1,0 +1,41 @@
+#Добавить пользователя в группу
+#---
+#swagger: "2.0"
+# @S
+tags:
+  - Group
+summary: "Добавить пользователя в группу"
+description: ""
+produces:
+      - "application/json"
+security:
+        - APIKeyHeader: [ 'x-access-token' ]
+parameters:
+      - name: "group_id"
+        in: "path"
+        type: "string"
+        format: "uuid"
+        required: true
+        description: "Идентификатор группы"
+      - name: "user_id"
+        in: "body"
+        type: "string"
+        format: "uuid"
+        required: true
+        description: "Идентификатор пользователя"
+        schema:
+          $ref: '#/definitions/UserId'
+responses:
+      "200":
+        description: "Пользователь добавлен в группу"
+      "404":
+        description: "Пользователь или группа не найдены"
+definitions:
+  UserId:
+    type: "object"
+    properties:
+      id:
+        type: "string"
+        format: "uuid"
+    xml:
+      name: "UserId"
