@@ -13,6 +13,7 @@ from flasgger import Swagger
 from flask import Flask, make_response, request
 from flask_migrate import init, migrate, upgrade
 from flask_opentracing import FlaskTracer
+from split_settings.tools import include
 from groups_bp.groups_bp import groups_bp
 from test_bp.test_bp import test_bp
 from users_bp.users_bp import users_bp
@@ -91,8 +92,8 @@ def db_initialize(app):
                 deleted=True,
             )
             # Берем пароли из переменных окружения
-            admin_user.password = os.getenv("ADMIN_PASSWORD")
-            regular_user.password = os.getenv("NOBODY_PASSWORD")
+            include('config/settings.py', )
+
             db.session.add(admin_group)
             db.session.add(admin_user)
             db.session.add(regular_user)
@@ -113,8 +114,8 @@ config_data = {
         "param": 1,
     },
     "local_agent": {
-        "reporting_host": "jaeger",
-        "reporting_port": "6831",
+        "reporting_host": os.getenv("REPORTING_HOST"),
+        "reporting_port": os.getenv("REPORTING_PORT"),
     },
     "logging": True,
 }
@@ -132,8 +133,8 @@ def _setup_jaeger():
 
 
 app = Flask(__name__)
-tracer = FlaskTracer(_setup_jaeger, app=app)
-
+if os.getenv("ENABLE_TRACER")
+    tracer = FlaskTracer(_setup_jaeger, app=app)
 
 @app.before_request
 def before_request():

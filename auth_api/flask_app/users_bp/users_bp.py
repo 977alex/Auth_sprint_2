@@ -11,6 +11,7 @@ from auth_config import Config, db, jwt, jwt_redis
 from authlib.integrations.flask_client import OAuth
 from db_models import History, SocialAccount, User
 from flasgger.utils import swag_from
+from split_settings.tools import include
 from flask import Blueprint
 from flask import current_app as app
 from flask import make_response, request, url_for
@@ -37,9 +38,8 @@ logger = logging.getLogger(__name__)
 
 
 def limit_requests(per_minute: int):
-    redis_host = os.getenv("REDIS_AUTH_HOST", "redis_auth")
-    redis_port = int(os.getenv("REDIS_AUTH_PORT", 6479))
-    redis_password = os.getenv("REDIS_AUTH_PASSWORD", "superpassword")
+    include('config/settings.py', )
+
     redis_conn = redis.Redis(
         host=redis_host, port=redis_port, db=0, password=redis_password
     )
@@ -126,13 +126,12 @@ def register():
         except Exception as err:
             return jsonify({"msg": f"Unexpected error: {err}"}), HTTPStatus.CONFLICT
 
-    else:
-        return (
-            jsonify(
-                {"msg": "User had already been registered. Check the email, id, login"}
-            ),
-            HTTPStatus.CONFLICT,
-        )
+    return (
+        jsonify(
+            {"msg": "User had already been registered. Check the email, id, login"}
+        ),
+        HTTPStatus.CONFLICT,
+    )
 
 
 @swag_from("../schemes/user_login_param.yaml")

@@ -13,4 +13,4 @@ Authlib==0.15.5
 requests
 python-dotenv
 flask_opentracing
-jaeger_client
+jaeger_client==4.8.0
