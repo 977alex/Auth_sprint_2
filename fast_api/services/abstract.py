@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+
 from db.cache import MemoryCache
 from db.storage import AbstractStorage
 

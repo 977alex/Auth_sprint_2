@@ -136,6 +136,7 @@ def register():
 
 @swag_from("../schemes/user_login_param.yaml")
 @users_bp.route("/login", methods=["POST"])
+@limit_requests(per_minute=10)
 def login():
     """
     Метод при успешной авториазции возвращает пару ключей access и refreh токенов
@@ -171,6 +172,7 @@ def login():
 # @jwt_required(refresh=True)
 @swag_from("../schemes/user_refresh_param.yaml")
 @users_bp.route("/refresh", methods=["POST"])
+@limit_requests(per_minute=10)
 def refresh():
     """
     Обновление пары токенов при получении действительного refresh токена
@@ -191,6 +193,7 @@ def refresh():
 # @jwt_required()
 @swag_from("../schemes/user_logout_param.yaml")
 @users_bp.route("/logout", methods=["DELETE"])
+@limit_requests(per_minute=10)
 def logout():
     """
     Выход пользователя из аккаунта
@@ -209,6 +212,7 @@ def logout():
 
 @swag_from("../schemes/user_account_post_param.yaml")
 @users_bp.route("/account/", methods=["POST"])
+@limit_requests(per_minute=10)
 def update():
     """
     Обновление данных пользователя
@@ -237,6 +241,7 @@ def update():
     validation=True,
 )
 @users_bp.route("/<user_id>/", methods=["GET"])
+@limit_requests(per_minute=10)
 def get_user(user_id):
     """
     Получить информацию о пользователе
@@ -255,6 +260,7 @@ def get_user(user_id):
 )
 @users_bp.route("/history", methods=["GET"])
 @jwt_required()
+@limit_requests(per_minute=10)
 def get_user_history(**kwargs):
     """
     Получить историю операций пользователя
@@ -284,6 +290,7 @@ def get_user_history(**kwargs):
 )
 @users_bp.route("/groups", methods=["GET"])
 @jwt_required()
+@limit_requests(per_minute=10)
 def get_user_groups(**kwargs):
     """
     Получить список групп, в которых состоит текущий пользователь
@@ -371,4 +378,4 @@ def social_user_authorise(social_name: str):
         db.session.add(history)
         db.session.commit()
     token = {"access_token": access_token, "refresh_token": refresh_token}
-    return make_response(token, 200)
+    return make_response(token, HTTPStatus.OK)
