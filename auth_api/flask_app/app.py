@@ -133,7 +133,7 @@ def _setup_jaeger():
 
 
 app = Flask(__name__)
-if os.getenv("ENABLE_TRACER")
+if os.getenv("ENABLE_TRACER"):
     tracer = FlaskTracer(_setup_jaeger, app=app)
 
 @app.before_request
